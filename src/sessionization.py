@@ -11,86 +11,102 @@ def parse(line):
     # Get required fields
     ipaddress = fields[0]
 
-    # document count for unique cik, accession, extention
-    document = {}
-    unique = "_".join([fields[4], fields[5], fields[6]])
-    document[unique] = 1
+    # document name and unique cik, accession, extention
+    document = "_".join([fields[4], fields[5], fields[6]])
     access_datetime = to_date(fields[1], fields[2])
 
-    # return (ipaddress, ipdate, iptime,cik, accession, extention)
     return {
     "ipaddress" : ipaddress,
     "access_datetime" : access_datetime,
     "cik_accession_extention": document
     }
 
-
-def process_stream(logfile, summaryfile, inactive_period):
-    logs = []
+def process_stream_2(logfile, summaryfile, inactive_period):
+    sessions = []
+    users = {}
+    begin = True
     """ Sessionization web log """
     with open(logfile) as stream:
         header = stream.readline()
         for line in stream:
             row = parse(line)
-            exist = False
-            remove_i = None
-            i = 0
-            length = len(logs)
-            if length == 0:
-                logs.append(row)
-                continue
+            process_time = row["access_datetime"]
 
-            for i in range(length):
-                log = logs[i]
-                if log["ipaddress"] == row["ipaddress"]:
-                    exist = True
-                    # Increment count
-                    document = log["cik_accession_extention"]
-                    name, value = row["cik_accession_extention"].items()[0]
-                    if name in document:
-                        document[name] = document[name] + value
-                    else:
-                        document[name] = value
+            # Add user and the document it accessed to a session
+            sessions = add_user_to_session(sessions, process_time, row)
 
-                    # Session complete
-                    start = log["access_datetime"]
-                    end = row["access_datetime"]
-                    delta_in_sec = (end-start).total_seconds()
-                    print(delta_in_sec)
+            # Identify inactive users and write to file
+            sessions = inactive_users(sessions, process_time, inactive_period)
 
-                    if(delta_in_sec == inactive_period):
-                        with open(summaryfile, "a") as summary:
-                            dict_length = len(document)
-                            new_row = ",".join([log["ipaddress"], str(start), str(end), str(delta_in_sec), str(dict_length)])
-                            new_row = new_row + "\n"
-                            summary.write(new_row)
-                        remove_i = i
-                        break
+def inactive_users(sessions, process_time, inactive_period):
+    length = len(sessions)
+    for i in range(length):
+        session_datetime, users = sessions[i].items()[0]
+        delta = (process_time - session_datetime).total_seconds()
+        if delta == inactive_period:
+            #j = i
+            #for j in range(j, length):
+                print("remains unsolved here when trying to identify inactive users")
+                print("lack of time to complete this exercise due to hectic work schedule")
+                print("May be I will try to participate in Insight program another time!!!")
+    return sessions
 
-            if not exist:
-                logs.append(row)
-            elif remove_i:
-                logs.pop(remove_i)
+def add_user_to_session(sessions, process_time, row):
+    # Add user and the document it accessed to a session
+    # session = 1 second in a day
+    # each session contains users dictionary and each user contians documents as dictionary
+    sessions, users = getSession(sessions, process_time)
+    if row["ipaddress"] in users:
+        # add document
+        user = users.get(row["ipaddress"])
+        document = row["cik_accession_extention"]
+        if document not in user:
+            user[document] = 1
+        users[row["ipaddress"]] = user
+    else:
+        # add user and document
+        document = row["cik_accession_extention"]
+        users[row["ipaddress"]] = {document: 1}
+    sessions = updateSession(sessions, process_time, users)
+    print("===============================================")
+    print("===============================================")
 
-    if len(logs) != 0:
-        exist = False
-        i = 0
-        log = logs[i]
-        log_length = len(logs)
-        for i in range(log_length):
-            if log["ipaddress"] == row["ipaddress"]:
-                log = logs[i]
-                document = log["cik_accession_extention"]
-                start = log["access_datetime"]
-                end = start
-                delta_in_sec = (end - start).total_seconds()
-                print(delta_in_sec)
-                with open(summaryfile, "a") as summary:
-                    dict_length = len(document)
-                    new_row = ",".join([log["ipaddress"], str(start), str(end), str(delta_in_sec), str(dict_length)])
-                    new_row = new_row + "\n"
-                    summary.write(new_row)
+    for i in range(len(sessions)):
+        pretty(sessions[i])
 
+    return sessions
+
+def pretty(d, indent=0):
+   for key, value in d.items():
+      print('\t' * indent + str(key))
+      if isinstance(value, dict):
+         pretty(value, indent+1)
+      else:
+         print('\t' * (indent+1) + str(value))
+
+def getSession(sessions, current):
+    """ Return users in a session"""
+    for session in sessions:
+        session, users = session.items()[0]
+        if session == current:
+            return sessions, users
+    users = {}
+    session = {current:users}
+    sessions.append(session)
+    return sessions, users
+
+def updateSession(sessions, process_time, users):
+    length = len(sessions)
+    for i in range(length):
+        session, users = sessions[i].items()[0]
+        if session == process_time:
+            dict1 = {session:users}
+            sessions[i] = dict1
+            return sessions
+    users = {}
+    dict1 = {session: users}
+    session.append(dict1)
+    return sessions
 
 def to_date(date_str, time_str):
     """ Converts date and time string to datetime data type """
@@ -108,5 +124,5 @@ if __name__ == '__main__':
     with open(inactivefile) as f_inactive:
         inactive_period = int(f_inactive.readline())
 
-    process_stream(logfile, summaryfile, inactive_period)
+    process_stream_2(logfile, summaryfile, inactive_period)
 
