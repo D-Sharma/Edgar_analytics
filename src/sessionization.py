@@ -26,7 +26,7 @@ def process_stream_2(logfile, summaryfile, inactive_period):
     users = {}
     begin = True
     """ Sessionization web log """
-    with open(logfile) as stream:
+    with open(logfile, "r") as stream, open(summaryfile, "a") as session_output:
         header = stream.readline()
         for line in stream:
             row = parse(line)
@@ -36,19 +36,68 @@ def process_stream_2(logfile, summaryfile, inactive_period):
             sessions = add_user_to_session(sessions, process_time, row)
 
             # Identify inactive users and write to file
-            sessions = inactive_users(sessions, process_time, inactive_period)
+            sessions = inactive_users(sessions, process_time, inactive_period, session_output)
 
-def inactive_users(sessions, process_time, inactive_period):
-    length = len(sessions)
-    for i in range(length):
+
+def inactive_users(sessions, current_time, inactive_period, session_output):
+    sessions_length = len(sessions)
+    # look at older sessions to identify inactive users and write it to file.
+    for i in range(sessions_length):
         session_datetime, users = sessions[i].items()[0]
-        delta = (process_time - session_datetime).total_seconds()
-        if delta == inactive_period:
-            #j = i
-            #for j in range(j, length):
-                print("remains unsolved here when trying to identify inactive users")
-                print("lack of time to complete this exercise due to hectic work schedule")
-                print("May be I will try to participate in Insight program another time!!!")
+        # For each user in session older than inactive period, search whether use has been inactive
+        # Look for inactivity users in the sessions after the current session
+        for item in users.items():
+            user_ipaddress, documents = item
+            # Last access datetime for this user
+            last_access_datetime = session_datetime
+            count = len(documents)
+            delta = (current_time - session_datetime).total_seconds()
+            # For each user, get last access datetime if exist in other later sessions.
+            j = i + 1
+            end_session = dict()
+            end_session[session_datetime] = user_ipaddress
+            has_sessions = False
+            for j in range(j, sessions_length):
+                # Check whether users exist in this session
+                current_session_datetime, current_users = sessions[j].items()[0]
+                if user_ipaddress in current_users.keys():
+                    has_sessions = True
+                    end_session[current_session_datetime] = user_ipaddress
+                    last_documents = current_users[user_ipaddress]
+                    last_access_datetime = current_session_datetime
+                    count = count + len(last_documents)
+                    delta = (last_access_datetime - session_datetime).total_seconds()
+                    if delta == inactive_period:
+                        # User has been inactive, hence write the session to file
+                        new_line = "\n"
+                        fields = [user_ipaddress, str(session_datetime), str(last_access_datetime), str(delta), str(count), new_line]
+                        row = ",".join(fields)
+                        write_session(session_output, fields)
+                        sessions = remove_user(sessions, end_session)
+            if not has_sessions:
+                if delta == inactive_period:
+                    new_line = "\n"
+                    fields = [user_ipaddress, str(session_datetime), str(last_access_datetime), str(delta), str(count),
+                            new_line]
+                    write_session(session_output, fields)
+                    sessions = remove_user(sessions, end_session)
+    return sessions
+
+
+def write_session(session_output, fields):
+    # User has been inactive, hence write the session to file
+    row = ",".join(fields)
+    session_output.write(row)
+
+def remove_user(sessions, end_sessions):
+    for item in end_sessions.items():
+        session_time, user = item
+        for i in range(len(sessions)):
+            session, users = sessions[i].items()[0]
+            if session == session_time and user in users:
+                users.pop(user, None)
+                sessions[i] = {session:users}
+                break
     return sessions
 
 def add_user_to_session(sessions, process_time, row):
